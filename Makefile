@@ -1,5 +1,5 @@
 # This is the name of your final .nex file without the .nex extension
-PROJ_NAME=bitmap_effects
+PROJ_NAME=copper-test
 
 # What's the image file for the emulator?
 IMAGEFILE=/mnt/f/zxnext/cspect/sdcard.img
@@ -19,7 +19,7 @@ SPRITEASSETS = $(wildcard assets/sprites/*.bmp)
 SPRITEDEFS = $(wildcard assets/sprites/*.json)
 
 #EXTRALIBS = libchai-input libchai-layer2 libchai-spritemanager libchai-sprites libchai-utils
-EXTRALIBS = libchai-layer2 libchai-spritemanager libchai-sprites
+#EXTRALIBS = libchai-layer2 libchai-spritemanager libchai-sprites
 
 # Maybe you'll need to edit this
 CRT=31

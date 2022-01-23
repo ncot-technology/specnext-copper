@@ -1,0 +1,207 @@
+#include <arch/zxn.h>
+#include <z80.h>
+#include <arch/zxn/copper.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <intrinsic.h>
+#include <arch/zxn/esxdos.h>
+
+#include "banking.h"
+
+#define RGB2COLOUR(r,g,b) (uint8_t)(((r & 0x7) << 5) | ((g & 0x7) << 2) | (b & 0x3))
+
+#define BANK_IMAGE_LOADER 16
+
+// gradient bars
+uint16_t gradientBars[] = {
+    // Reset at top
+    CU_WAIT(0,48),
+    CU_MOVE(REG_PALETTE_INDEX, 0x10),
+    CU_MOVE(REG_PALETTE_VALUE_8, 0),
+    // Start of bars
+    // Three bars, each with 8 stripes
+    // Each stripe needs three commands - wait, move index, move palette
+    // BAR 1 - yellow-orange
+    CU_WAIT(16,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 252),
+    CU_WAIT(18,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 244),
+    CU_WAIT(20,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 236),
+    CU_WAIT(22,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 228),
+    CU_WAIT(24,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 228),
+    CU_WAIT(26,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 236),
+    CU_WAIT(28,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 244),
+    CU_WAIT(30,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 252),
+    // BAR 2 - blues
+    CU_WAIT(32,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 95),
+    CU_WAIT(34,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 87),
+    CU_WAIT(36,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 79),
+    CU_WAIT(38,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 71),
+    CU_WAIT(40,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 71),
+    CU_WAIT(42,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 79),
+    CU_WAIT(44,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 87),
+    CU_WAIT(46,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 95),
+    // BAR 3 - greens
+    CU_WAIT(48,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 28),
+    CU_WAIT(50,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 20),
+    CU_WAIT(52,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 16),
+    CU_WAIT(54,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 12),
+    CU_WAIT(56,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 12),
+    CU_WAIT(58,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 16),
+    CU_WAIT(60,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 20),
+    CU_WAIT(62,48),CU_MOVE(REG_PALETTE_INDEX, 0x10),CU_MOVE(REG_PALETTE_VALUE_8, 28),
+
+    // Set border back to black
+    CU_WAIT(64,48),
+    CU_MOVE(REG_PALETTE_INDEX, 0x10),
+    CU_MOVE(REG_PALETTE_VALUE_8, 0),
+
+    CU_WAIT(400,0)
+};
+
+void loadImage(char *filename, uint8_t bank)
+{
+    errno = 0;
+    uint16_t filehandle = esxdos_f_open(filename, ESXDOS_MODE_R | ESXDOS_MODE_OE);
+    if (errno != ESXDOS_OK) {
+        zx_border(INK_RED);
+        return;
+    }
+
+    // Bank 16 into slot 2
+    bank_set_16k(2, bank);
+
+    uint8_t *addr = (uint8_t *)(0x4000);
+    esxdos_f_read(filehandle, (uint8_t *)addr, 16384);
+
+    bank_set_16k(2, bank + 1);
+    addr = (uint8_t *)(0x4000);
+    esxdos_f_read(filehandle, (uint8_t *)addr, 16384);
+
+    bank_set_16k(2, bank + 2);
+    addr = (uint8_t *)(0x4000);
+    esxdos_f_read(filehandle, (uint8_t *)addr, 16384);
+
+    esxdos_f_close(filehandle);
+}
+
+void DMACopyScreen(uint8_t bank)
+{
+    bank_set_16k(2, bank);
+    
+    IO_123B = 0x07;
+
+    // DMA
+    // WR0
+    IO_6B = 0x7D;
+    IO_6B = 0x00;
+    IO_6B = 0x40; // A Start
+    IO_6B = 0x00;
+    IO_6B = 0x40; // 16k
+    // WR1
+    IO_6B = 0x14;
+    // WR2
+    IO_6B = 0x10;
+    // WR4
+    IO_6B = 0xCD;
+    IO_6B = 0x00;
+    IO_6B = 0x00;
+    // WR6 (load)
+    IO_6B = 0xCF;
+    // WR6 (enable)
+    IO_6B = 0x87;
+
+    bank_set_16k(2, bank + 1);
+    IO_123B = 0x47;
+    // WR6 (disable)
+    IO_6B = 0x83;
+    // WR6 (load)
+    IO_6B = 0xCF;
+    // WR6 (enable)
+    IO_6B = 0x87;
+
+    bank_set_16k(2, bank + 2);
+    IO_123B = 0x87;
+    // WR6 (disable)
+    IO_6B = 0x83;
+    // WR6 (load)
+    IO_6B = 0xCF;
+    // WR6 (enable)
+    IO_6B = 0x87;
+}
+
+uint8_t yPos = 16;
+uint8_t frameCounter = 10;
+uint8_t dir = 0;
+uint8_t barindex = 3;
+
+void UpdateCopperBars()
+{
+    for (uint8_t i = 0; i < 72; i++) {
+        gradientBars[barindex+i*3] = CU_WAIT(yPos+i*2,0);
+    }
+
+    uint8_t *copperPtr = gradientBars;
+    uint16_t copperProgLen = sizeof gradientBars / sizeof *gradientBars;
+    for (int j = 0; j < copperProgLen*2; j++) {
+        IO_NEXTREG_REG = REG_COPPER_DATA;
+        IO_NEXTREG_DAT = copperPtr[j];
+    }
+
+    IO_NEXTREG_REG = REG_COPPER_CONTROL_H;
+    IO_NEXTREG_DAT = 0xC0;
+    IO_NEXTREG_REG = REG_COPPER_CONTROL_L;
+    IO_NEXTREG_DAT = 0;
+
+    if (--frameCounter == 0) {
+        frameCounter = 10;
+        if (dir == 0) {
+            yPos++;
+            if (yPos > 144) dir = 1;
+        } else {
+            yPos--;
+            if (yPos == 0) dir = 0;
+        }
+    }
+}
+
+int main(void)
+{
+    intrinsic_di();
+    loadImage("main.nxi", BANK_IMAGE_LOADER);
+
+    DMACopyScreen(BANK_IMAGE_LOADER);
+
+    // Turn off enhanced ULA and set palette to be ULA
+    IO_NEXTREG_REG = 0x43;
+    IO_NEXTREG_DAT = 0x0;
+      
+    zx_border(16);
+    // Choose ULA palette 16
+    IO_NEXTREG_REG = REG_PALETTE_INDEX;
+    IO_NEXTREG_DAT = 16;
+
+    // Remap it to green
+    IO_NEXTREG_REG = REG_PALETTE_VALUE_8;
+    IO_NEXTREG_DAT = RGB2COLOUR(0,7,0);
+
+    // Endless loop
+    uint8_t *copperPtr = gradientBars;
+    uint8_t copperProgLen = sizeof gradientBars / sizeof *gradientBars;
+    for (int i = 0; i < copperProgLen*2; i++) {
+        IO_NEXTREG_REG = REG_COPPER_DATA;
+        IO_NEXTREG_DAT = copperPtr[i];
+    }
+
+    IO_NEXTREG_REG = REG_COPPER_CONTROL_H;
+    IO_NEXTREG_DAT = 0xC0;
+    IO_NEXTREG_REG = REG_COPPER_CONTROL_L;
+    IO_NEXTREG_DAT = 0;
+
+    while (1) {
+        UpdateCopperBars();
+    }       
+
+    return 0;
+}
+
+/* C source end */
