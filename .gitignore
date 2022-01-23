@@ -1,0 +1,8 @@
+syncpoint.dat
+build/
+bin/
+src/*.lis
+src/*.sym
+src/*.o
+dist/
+a.out
